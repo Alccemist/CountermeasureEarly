@@ -23,7 +23,7 @@ bot = commands.Bot(command_prefix='!', intents = intents) # Create a bot instanc
 # [Bot Initialization]
 @bot.event
 async def on_ready():
-	print(f'Bot {bot.user.name} running - ID {bot.user.id}') # Making it an f-string allows us to embed variables directly in the string.
+	print(f'Bot "{bot.user.name}" RUNNING — ID {bot.user.id}') # Making it an f-string allows us to embed variables directly in the string.
 
 # [Member Join Event]
 @bot.event
