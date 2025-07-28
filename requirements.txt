@@ -1,0 +1,3 @@
+	Project Requirements:
+discord.py
+python.env
