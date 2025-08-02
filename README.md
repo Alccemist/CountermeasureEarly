@@ -22,7 +22,7 @@ Employing SQLite for data-keeping.
 
 # Requirements
 
-To install requirements, enter this into a console within the project irectory:
+To install requirements, enter this into a console within the project directory:
 "pip install -r requirements.txt"
 
 You will need to create a Discord bot for main.py's "TOKEN". A server ID is needed for "SERVER_ID".
