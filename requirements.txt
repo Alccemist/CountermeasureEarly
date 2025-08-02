@@ -1,2 +1,5 @@
 discord.py
-python.env
+python-dotenv
+aiohttp # Async HTTP requests
+aiosqlite # Asynchronous SQLite database access
+typing # Type hints
