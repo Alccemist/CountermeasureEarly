@@ -1,7 +1,7 @@
 # CountermeasureEarly
 Learning how to write a Discord data-handling bot here.
 I'm also learning Python with this — most of my experience is in C/C++ and LuaU.
-Employing SQLite for data-keeping.
+Employing SQLite for data-keeping. I am aware of its drawbacks with scaling, but for this project's scale, its simplicity over a client-server RDBMS is heavily enjoyed.
 
 # Objectives:
 - Understand basic Discord API syntax
