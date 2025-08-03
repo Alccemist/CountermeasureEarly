@@ -19,7 +19,7 @@ class ReactionRoles(commands.Cog):
 			# ^ This is no longer used, because we've gone from memory-based to persistent mapping. Good!
 		self.GUILD_ID = bot.GUILD_ID
 
-		# register the slash command for this guild only:
+		# register our create reaction roles here so it can access the GUILD_ID.
 		self.bot.tree.add_command(
 			self.create_reaction_roles,
 			guild=discord.Object(id=self.GUILD_ID)
