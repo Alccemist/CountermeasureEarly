@@ -1,19 +1,29 @@
-import discord,os,asyncio,aiosqlite # asyncio, aiosqlite to be used. Check TODO
+import discord, os
+from database import save_mapping, load_mapping
 from discord.ext import commands
 from discord import app_commands
 
 # Cogs are a way to organize commands and events in Discord.py.
 # They allow us to group related commands and events together, making our code cleaner and more manageable
 
-# TODO: Set up reaction roles database. Current rxn roles system is based on memory.
+# An important note: an interaction only has "one" response slot. If we call interaction.response two or more times,
+	# then it'll raise an error.
+	# This means that we need to validate everything, early exit on errors (must RETURN await interaction.response.send...)
+	# and then finally, if all is well, await interaction.response.send_ ...!
 
 class ReactionRoles(commands.Cog):
-	def __init__(self, Bot: commands.Bot):
+	def __init__(self, bot: commands.Bot):
 		# recall we're defining an __init__ method to initialize the extension of cog, including its parameters.
-		self.Bot = Bot 
-		self.mapping: dict[int, dict[str, int]] = {} # This will map message IDs to a dictionary of emoji-role pairs.
-		self.GUILD_ID = Bot.GUILD_ID
+		self.bot = bot 
+		# self.mapping: dict[int, dict[str, int]] = {} 
+			# ^ This is no longer used, because we've gone from memory-based to persistent mapping. Good!
+		self.GUILD_ID = bot.GUILD_ID
 
+		# register the slash command for this guild only:
+		self.bot.tree.add_command(
+			self.create_reaction_roles,
+			guild=discord.Object(id=self.GUILD_ID)
+		)
 
 	# [Reaction Events]
 		# We are using Commands.Cog.listener in place of @Bot.event.
@@ -22,48 +32,43 @@ class ReactionRoles(commands.Cog):
 	# A raw reaction is a reaction that is not cached. Useful for persistence.
 	# A note on functions within classes: they become instance methods. 
 		# Instance methods always take "self" as the first parameter.
-		if payload.message_id not in self.mapping:
+
+ 		# We've replaced the old memory-based method with a solution from our database.py module.
+		try:
+			mapping = await load_mapping(self.bot.db, payload.message_id)
+		except Exception as e:
+			return print(f"Mapping error: {e}")
+		role_id = mapping.get(str(payload.emoji))
+		if not role_id:
 			return
-		roleId = self.mapping[payload.message_id].get(str(payload.emoji)) # Get the role ID from the mapping.
-		if not roleId:
-			return
-		guild = self.Bot.get_guild(payload.guild_id) # Get the guild (server) where the reaction was added.
+		guild = self.bot.get_guild(payload.guild_id) # Get the guild (server) where the reaction was added.
 			# This comes from the bot, not just our cog....
 		member = guild.get_member(payload.user_id) # Get the member who added the reaction.
 		if member:
-			await member.add_roles(guild.get_role(roleId)) # Add the role to the member.
+			await member.add_roles(guild.get_role(role_id)) # Add the role to the member.
 
 	@commands.Cog.listener()
 	async def on_raw_reaction_remove(self, payload:discord.RawReactionActionEvent):
 		# Applies the same logic as above, but for removing rxns instead.
-		if payload.message_id not in self.mapping:
+		mapping = await load_mapping(self.bot.db, payload.message_id)
+		role_id = mapping.get(str(payload.emoji))
+		if not role_id:
 			return
-		roleId = self.mapping[payload.message_id].get(str(payload.emoji))
-		if not roleId:
-			return
-		guild = self.Bot.get_guild(payload.guild_id)
-		member = guild.get_member(payload.user_id)
+		guild = self.bot.get_guild(payload.guild_id) # Get the guild (server) where the reaction was added.
+			# This comes from the bot, not just our cog....
+		member = guild.get_member(payload.user_id) # Get the member who added the reaction.
 		if member:
-			await member.remove_roles(guild.get_role(roleId))
+			await member.remove_roles(guild.get_role(role_id)) # Add the role to the member.
 		
-	# [Reaction Roles Command]
+	# [Create Reaction Roles Command]
 	# This uses a modal due to its complexity. For simpler input-based commands, we can do @app_commands.describe().
-	@app_commands.command()
-	@app_commands.guilds(discord.Object(id=int(os.getenv("SERVER_ID"))))
+	@app_commands.command(name="create_reaction_roles", description="Create a reaction roles embed.")
 	async def create_reaction_roles(self, interaction:discord.Interaction):
 		modal = ReactionRolesModal()
-		modal.cog = self
+		modal.bot = self.bot
+		if interaction.guild_id != self.GUILD_ID or not interaction.user.guild_permissions.administrator:
+			return await interaction.response.send_message("You do not have permission...", ephemeral=True)
 		await interaction.response.send_modal(modal)
-		# Check if the caller is an admin:
-		if interaction.guild_id != self.GUILD_ID:
-			return await interaction.response.send_message("Wrong server...", ephemeral=True)
-		if not interaction.user.guild_permissions.administrator:
-			await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-			return
-		else:
-			
-			await interaction.response.send_modal(ReactionRolesModal())
-
 
 # [Reaction Roles Setup & Modal]
 class ReactionRolesModal(discord.ui.Modal, title="Reaction Roles Setup"):
@@ -96,47 +101,48 @@ class ReactionRolesModal(discord.ui.Modal, title="Reaction Roles Setup"):
 	)
 
 	async def on_submit(self,interaction:discord.Interaction): # Note that the lib uses snake_case for methods. First accidentally used camelCase...
-		# [Color input service]
-		color=discord.Color.default()
-		if self.colInput.value: # Executes if we've a proper color input:
+		# [Color validation service]
+		if self.colInput.value:
 			try:
 				color=discord.Color.from_str(self.colInput.value)
-			except ValueError:
-				await interaction.response.send_message("Invalid color code.", ephemeral=True)
+			except ValueError: # interaction.response 1: Error via invalid color
+				return await interaction.response.send_message("Invalid color code...", ephemeral=True)
+		else:
+			color=discord.Color.default()
 
-		# [Create embed]
+		# [Emoji-role mapping service] - Now persistent!
+		# Parse emoji:role pairs
+		mapping: dict[str, int] = {}
+		for chunk in self.emojiInput.value.split(","):
+			emoji, roleName = chunk.split("|")
+			role = discord.utils.get(interaction.guild.roles, name=roleName.strip())
+			if not role: # interaction.response 2: Error via missing role
+				return await interaction.response.send_message(
+					f"Role '{roleName.strip()}' not found...", ephemeral=True
+			)
+			mapping[emoji.strip()] = role.id
+
+		# If we've made it to here, then there are no errors. Let's build our embed and do our one-and-only send_message.
 		embed = discord.Embed(
 			title=self.titleInput.value,
 			description=self.descInput.value,
 			color=color,
 			timestamp=interaction.created_at
 		)
+		
 		await interaction.response.send_message(embed=embed)
-
-		# [Fetch message object]
+		# Fetch message object
 		bot_msg = await interaction.original_response()
 
-		# [Emoji-role mapping service]
-		# Parse emoji:role pairs
-		mapping: dict[str, int] = {}
-		# Recall that the colon is used to define type. We're expecting a dictionary with string keys and integer vals.
-		for pairs in self.emojiInput.value.split(","):
-			emoji, roleName = pairs.split("|")
-			role = discord.utils.get(interaction.guild.roles, name=roleName.strip())
-			if role:
-				mapping[emoji.strip()] = role.id
-			else:
-				await interaction.response.send_message(f"Role '{roleName.strip()}' not found...", ephemeral=True)
-				return
-
-		# [Add rxns]
 		for emoji in mapping:
 			await bot_msg.add_reaction(emoji)
-
-		# [Store mapping]
-		self.cog.mapping[bot_msg.id] = mapping
-
+		# [Store mapping] - Now persistent!
+		for emoji, role_id in mapping.items():
+			try:
+				await save_mapping(self.bot.db, bot_msg.id, emoji, role_id)
+			except Exception as e:
+				return print(f"Save_mapping error: {e}")
 
 # finally instantiate and register our cog:
-async def setup(Bot: commands.Bot):
-    await Bot.add_cog(ReactionRoles(Bot))
+async def setup(bot: commands.Bot):
+    await bot.add_cog(ReactionRoles(bot))

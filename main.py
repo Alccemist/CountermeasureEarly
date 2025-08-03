@@ -1,4 +1,5 @@
-import discord,logging,os
+import aiosqlite,discord,logging,os
+from database import ensure_reaction_roles_table
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -8,8 +9,8 @@ load_dotenv() # We call this to parse a .env file. Without it, we can't access e
 
 # Load environment vars from .env file. Remember to never commit the .env file to version control.
 CMD_PREFIX:str = "!" # Our command prefix
-SERVER_ID = os.getenv('SERVER_ID') # This is the ID of the server where the bot will operate.
-	# This will be turned into an object, GUILD_ID, for use in all relevant services.
+SERVER_ID = int(os.getenv('SERVER_ID')) # This is the ID of the server where the bot will operate. Need to convert it to an integer
+	# This will also be turned into an object, GUILD_ID, for use in all relevant services.
 TOKEN = os.getenv('DISCORD_TOKEN')
 
 
@@ -98,16 +99,6 @@ async def check_bot_setup_status(bot):
 	except Exception as e:
 		print(f"Error syncing commands: {e}")
 
-async def try_loading_cog(bot:commands.Bot, cog_name: str):
-	# Use this when attempting to load a cog by name. If all is well, load it. If not, an error. If cog already exists, reload.
-	try:
-		if cog_name in bot.extensions:
-			await bot.load_extension(cog_name) # Check reaction_roles .py for an explanation of cogs
-		else:
-			await bot.load_extension(cog_name)
-	except Exception as e:
-		print(f"Error loading {cog_name}: {e}")
-
 # [CLASSES & INSTANTIATION]--------------------------------------------------------------------------
 class MyBot(commands.Bot): # We'll create a class for event handling and shared state.
 	def __init__(self):
@@ -121,12 +112,15 @@ class MyBot(commands.Bot): # We'll create a class for event handling and shared 
 		self.GUILD_ID = SERVER_ID
 
 	async def setup_hook(self):
-		await try_loading_cog(self, "cogs.reaction_roles")
+		self.db = await aiosqlite.connect("game.db")
+		await ensure_reaction_roles_table(self.db)
+		await self.load_extension("cogs.reaction_roles")
+		await check_bot_setup_status(self)
 	
 	# Bot Events do not rely on any input. Useful for automatically responding to certain events in the server.
 	# [Bot Ready Event]
 	async def on_ready(self):
-		await check_bot_setup_status(self)
+		return 0
 
 	# [Member Join Event]
 	async def on_member_join(member):
@@ -189,7 +183,7 @@ async def create_embed(interaction:discord.Interaction):
 async def create_dropdown(interaction:discord.Interaction):
 	await interaction.response.send_message(
 		"Luh Buttons",
-		view = sampleButtonsView()
+		view = SampleButtonsView()
 	)
 
 # [Dropdown Command]
