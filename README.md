@@ -7,6 +7,9 @@ Employing SQLite for data-keeping. I am aware of its drawbacks with scaling, but
 - Understand basic Discord API syntax
 - Learn and create basic commands (initially prefixed, now slash-based)
 - Learn and apply Discord "View" UI system
+- Persistently store reaction role messages and information (prevents bot restarts from affecting old reaction roles)
+
+Countermeasure, the complete bot will:
 - Create a customizable game-like "shop" and "inventory" with interactive commands such as "use", "give", "sell", etc...
 - Create a configurable player-driven economy
 	- First model to include customizable* time durations** per "collect", "research" actions
@@ -17,7 +20,7 @@ Employing SQLite for data-keeping. I am aware of its drawbacks with scaling, but
 	- **: Currently discussing whether to determine these features' parameters through a parent time-based "turn" system.
 		- With just collect and research, all this would do is standardize the cycle for each action.
 		- If we are to branch out from this into war turns or other time-based activities, there may be more benefit to it.
-- Support player data persistence through SQLite databases
+- Track player data through SQLite databases
 	- This means storing all messages, past and present, that include events for the bot to acknowledge.
 
 # Requirements
